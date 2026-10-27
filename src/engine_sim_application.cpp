@@ -115,6 +115,20 @@ void EngineSimApplication::initialize(void *instance, ysContextObject::DeviceAPI
     dbasic::Path modulePath = dbasic::GetModulePath();
     dbasic::Path confPath = modulePath.Append("delta.conf");
 
+    // Scripts are loaded from ../assets relative to the working directory. When
+    // launched from Finder or Explorer that may not be the executable's folder,
+    // so fall back to it if that is where the assets are.
+    {
+        namespace fs = std::filesystem;
+        const fs::path moduleDir = modulePath.ToString();
+        std::error_code ec;
+        if (!fs::exists("../assets/main.mr", ec)
+            && fs::exists(moduleDir / ".." / "assets" / "main.mr", ec))
+        {
+            fs::current_path(moduleDir, ec);
+        }
+    }
+
     std::string enginePath = "../dependencies/submodules/delta-studio/engines/basic";
     m_assetPath = "../assets";
     if (confPath.Exists()) {
