@@ -382,6 +382,12 @@ target_include_directories(engine-sim-app
 
 add_subdirectory(dependencies)
 
+if (WIN32)
+    # delta-physics calls std::min/std::max, which windows.h's min/max macros
+    # break. Scoped to that target: the DirectSound backend relies on the macros.
+    target_compile_definitions(delta-physics PRIVATE NOMINMAX)
+endif ()
+
 # GTEST
 
 enable_testing()
