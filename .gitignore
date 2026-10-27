@@ -10,3 +10,9 @@ compile_commands.json
 
 # Blender temporary files
 *.blend1
+
+# macOS build directory
+build-macos/
+
+# macOS Finder metadata
+.DS_Store

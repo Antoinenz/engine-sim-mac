@@ -30,7 +30,8 @@ class LoadSimulationCluster : public UiElement {
         void updateHpAndTorque(float dt);
         bool isIgnitionOn() const;
 
-        float m_systemStatusLights[4];
+        static constexpr int SystemStatusCount = 5;
+        float m_systemStatusLights[SystemStatusCount];
         LabeledGauge *m_dynoSpeedGauge;
         LabeledGauge *m_torqueGauge;
         LabeledGauge *m_hpGauge;

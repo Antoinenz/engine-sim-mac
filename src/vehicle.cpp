@@ -11,6 +11,8 @@ Vehicle::Vehicle() {
     m_tireRadius = 0;
     m_travelledDistance = 0;
     m_rollingResistance = 0;
+    m_brake = 0;
+    m_maxBrakeForce = 0;
 }
 
 Vehicle::~Vehicle() {
@@ -24,6 +26,9 @@ void Vehicle::initialize(const Parameters &params) {
     m_diffRatio = params.diffRatio;
     m_tireRadius = params.tireRadius;
     m_rollingResistance = params.rollingResistance;
+
+    // Full braking decelerates at roughly 0.9 g, typical for road tires
+    m_maxBrakeForce = 0.9 * 9.81 * m_mass;
 }
 
 void Vehicle::update(double dt) {

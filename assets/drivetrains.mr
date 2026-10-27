@@ -1,0 +1,150 @@
+// Vehicle and gearbox presets. Press P in the app to cycle through them.
+//
+// Each preset is a pair of public nodes named drivetrain_<id>_vehicle and
+// drivetrain_<id>_transmission. Add your own by following the same pattern;
+// the app picks them up automatically, in the order they appear here.
+
+import "engine_sim.mr"
+
+units units()
+
+// Light front-drive hatchback, 6-speed manual
+public node drivetrain_compact_vehicle {
+    alias output __out:
+        vehicle(
+            mass: 2700 * units.lb,
+            drag_coefficient: 0.3,
+            cross_sectional_area: (72 * units.inch) * (56 * units.inch),
+            diff_ratio: 3.9,
+            tire_radius: 10 * units.inch,
+            rolling_resistance: 0.015 * 2700 * units.lb * 9.81
+        );
+}
+
+public node drivetrain_compact_transmission {
+    alias output __out:
+        transmission(max_clutch_torque: 300 * units.lb_ft)
+        .add_gear(3.636)
+        .add_gear(2.375)
+        .add_gear(1.761)
+        .add_gear(1.346)
+        .add_gear(0.971)
+        .add_gear(0.756);
+}
+
+// Rear-engine sports car, close-ratio 6-speed manual
+public node drivetrain_sports_car_vehicle {
+    alias output __out:
+        vehicle(
+            mass: 3200 * units.lb,
+            drag_coefficient: 0.29,
+            cross_sectional_area: (71 * units.inch) * (51 * units.inch),
+            diff_ratio: 3.44,
+            tire_radius: 13 * units.inch,
+            rolling_resistance: 0.012 * 3200 * units.lb * 9.81
+        );
+}
+
+public node drivetrain_sports_car_transmission {
+    alias output __out:
+        transmission(max_clutch_torque: 500 * units.lb_ft)
+        .add_gear(3.82)
+        .add_gear(2.20)
+        .add_gear(1.52)
+        .add_gear(1.22)
+        .add_gear(1.02)
+        .add_gear(0.84);
+}
+
+// 60s/70s muscle car, close-ratio 4-speed
+public node drivetrain_muscle_car_vehicle {
+    alias output __out:
+        vehicle(
+            mass: 3600 * units.lb,
+            drag_coefficient: 0.45,
+            cross_sectional_area: (75 * units.inch) * (53 * units.inch),
+            diff_ratio: 3.73,
+            tire_radius: 13.5 * units.inch,
+            rolling_resistance: 0.015 * 3600 * units.lb * 9.81
+        );
+}
+
+public node drivetrain_muscle_car_transmission {
+    alias output __out:
+        transmission(max_clutch_torque: 600 * units.lb_ft)
+        .add_gear(2.20)
+        .add_gear(1.64)
+        .add_gear(1.28)
+        .add_gear(1.00);
+}
+
+// Heavy pickup, 4-speed with a granny first gear
+public node drivetrain_pickup_truck_vehicle {
+    alias output __out:
+        vehicle(
+            mass: 5000 * units.lb,
+            drag_coefficient: 0.45,
+            cross_sectional_area: (79 * units.inch) * (72 * units.inch),
+            diff_ratio: 4.10,
+            tire_radius: 15 * units.inch,
+            rolling_resistance: 0.018 * 5000 * units.lb * 9.81
+        );
+}
+
+public node drivetrain_pickup_truck_transmission {
+    alias output __out:
+        transmission(max_clutch_torque: 800 * units.lb_ft)
+        .add_gear(6.55)
+        .add_gear(3.58)
+        .add_gear(1.70)
+        .add_gear(1.00);
+}
+
+// Mid-engine supercar, 7-speed dual clutch
+public node drivetrain_supercar_vehicle {
+    alias output __out:
+        vehicle(
+            mass: 3300 * units.lb,
+            drag_coefficient: 0.33,
+            cross_sectional_area: (76 * units.inch) * (47 * units.inch),
+            diff_ratio: 4.44,
+            tire_radius: 13.5 * units.inch,
+            rolling_resistance: 0.012 * 3300 * units.lb * 9.81
+        );
+}
+
+public node drivetrain_supercar_transmission {
+    alias output __out:
+        transmission(max_clutch_torque: 700 * units.lb_ft)
+        .add_gear(3.91)
+        .add_gear(2.29)
+        .add_gear(1.58)
+        .add_gear(1.19)
+        .add_gear(0.97)
+        .add_gear(0.81)
+        .add_gear(0.66);
+}
+
+// Sport bike with rider; diff ratio is primary x final drive
+public node drivetrain_motorcycle_vehicle {
+    alias output __out:
+        vehicle(
+            mass: 700 * units.lb,
+            drag_coefficient: 0.6,
+            cross_sectional_area: (26 * units.inch) * (45 * units.inch),
+            diff_ratio: 3.81,
+            tire_radius: 12.5 * units.inch,
+            rolling_resistance: 0.015 * 700 * units.lb * 9.81
+        );
+}
+
+public node drivetrain_motorcycle_transmission {
+    alias output __out:
+        transmission(max_clutch_torque: 150 * units.lb_ft)
+        .add_gear(2.615)
+        .add_gear(1.937)
+        .add_gear(1.526)
+        .add_gear(1.285)
+        .add_gear(1.136)
+        .add_gear(1.043);
+}

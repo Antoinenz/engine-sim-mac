@@ -3,7 +3,7 @@ import "engine_sim.mr"
 unit_names units()
 public node use_default_theme {
     input start_fullscreen: false;
-    input speed_units: units.mph;
+    input speed_units: units.kph;
     input pressure_units: units.inHg;
     input torque_units: units.lb_ft;
     input power_units: units.hp;

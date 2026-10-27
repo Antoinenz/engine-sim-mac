@@ -90,6 +90,12 @@ class EngineSimApplication {
 
     protected:
         void loadScript();
+        void reloadScript();
+        void selectEngine();
+        void cycleDrivetrain();
+        bool readEngineSelection();
+        bool setEngineScript(const std::string &relativePath);
+        void writeMainScript();
         void processEngineInput();
         void renderScene();
 
@@ -183,6 +189,13 @@ class EngineSimApplication {
 
         int m_oscillatorSampleOffset;
         int m_screen;
+
+        // Engine script and drivetrain preset currently written to main.mr.
+        // An empty drivetrain means the engine script's own main (stock).
+        std::string m_engineScript;
+        std::string m_engineNode;
+        bool m_engineHasMain = false;
+        std::string m_drivetrain;
 
 #ifdef ATG_ENGINE_SIM_VIDEO_CAPTURE
         atg_dtv::Encoder m_encoder;

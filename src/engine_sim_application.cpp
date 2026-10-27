@@ -16,9 +16,32 @@
 
 #include "../scripting/include/compiler.h"
 
+// macOS port: impulse response .wav loading below used
+// ysWindowsAudioWaveFile (Windows Multimedia I/O) unconditionally; use the
+// portable ysMacAudioWaveFile (plain RIFF/WAVE parsing over ISO C file I/O,
+// see yds_mac_audio_wave_file.cpp) on non-Windows platforms instead.
+#if defined(_WIN32)
+#include "../dependencies/submodules/delta-studio/include/yds_windows_audio_wave_file.h"
+#else
+#include "../dependencies/submodules/delta-studio/include/yds_mac_audio_wave_file.h"
+#endif
+
+#include "../include/engine_picker.h"
+
+#include <algorithm>
+#include <cctype>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <regex>
 #include <stdlib.h>
 #include <sstream>
+
+#if defined(_WIN32)
+using PlatformAudioWaveFile = ysWindowsAudioWaveFile;
+#else
+using PlatformAudioWaveFile = ysMacAudioWaveFile;
+#endif
 
 #if ATG_ENGINE_SIM_DISCORD_ENABLED
 #include "../discord/Discord.h"
@@ -145,12 +168,21 @@ void EngineSimApplication::initialize(void *instance, ysContextObject::DeviceAPI
 
     m_assetManager.SetEngine(&m_engine);
 
+    // Per-frame UI geometry buffers. Enlarged from the original 100k vertex /
+    // 200k index sizes: on a Retina/HiDPI display the UI renders at 2x backing
+    // resolution, so radius-based tessellation (gauge arcs, circles, the
+    // engine cutaway) emits proportionally more triangles -- a full frame now
+    // uses ~195k indices before the oscilloscopes are even reached. At the old
+    // 200k index cap the scopes (drawn last) failed GeometryGenerator::
+    // startPath's capacity check and silently rendered nothing, leaving the
+    // exhaust-flow / waveform panels blank. These sizes leave comfortable
+    // headroom for the full dashboard at 2x.
     m_engine.GetDevice()->CreateIndexBuffer(
-        &m_geometryIndexBuffer, sizeof(unsigned short) * 200000, nullptr);
+        &m_geometryIndexBuffer, sizeof(unsigned short) * 500000, nullptr);
     m_engine.GetDevice()->CreateVertexBuffer(
-        &m_geometryVertexBuffer, sizeof(dbasic::Vertex) * 100000, nullptr);
+        &m_geometryVertexBuffer, sizeof(dbasic::Vertex) * 250000, nullptr);
 
-    m_geometryGenerator.initialize(100000, 200000);
+    m_geometryGenerator.initialize(250000, 500000);
 
     initialize();
 }
@@ -354,11 +386,15 @@ void EngineSimApplication::run() {
         }
 
         if (m_engine.ProcessKeyDown(ysKey::Code::Return)) {
-            m_audioSource->SetMode(ysAudioSource::Mode::Stop);
-            loadScript();
-            if (m_simulator->getEngine() != nullptr) {
-                m_audioSource->SetMode(ysAudioSource::Mode::Loop);
-            }
+            reloadScript();
+        }
+
+        if (m_engine.ProcessKeyDown(ysKey::Code::O)) {
+            selectEngine();
+        }
+
+        if (m_engine.ProcessKeyDown(ysKey::Code::P)) {
+            cycleDrivetrain();
         }
 
         if (m_engine.ProcessKeyDown(ysKey::Code::Tab)) {
@@ -490,7 +526,7 @@ void EngineSimApplication::loadEngine(
     for (int i = 0; i < engine->getExhaustSystemCount(); ++i) {
         ImpulseResponse *response = engine->getExhaustSystem(i)->getImpulseResponse();
 
-        ysWindowsAudioWaveFile waveFile;
+        PlatformAudioWaveFile waveFile;
         waveFile.OpenFile(response->getFilename().c_str());
         waveFile.InitializeInternalBuffer(waveFile.GetSampleCount());
         waveFile.FillBuffer(0);
@@ -665,6 +701,185 @@ void EngineSimApplication::loadScript() {
 
     loadEngine(engine, vehicle, transmission);
     refreshUserInterface();
+}
+
+void EngineSimApplication::reloadScript() {
+    m_audioSource->SetMode(ysAudioSource::Mode::Stop);
+    loadScript();
+    if (m_simulator->getEngine() != nullptr) {
+        m_audioSource->SetMode(ysAudioSource::Mode::Loop);
+    }
+}
+
+namespace {
+    std::string readTextFile(const std::filesystem::path &path) {
+        std::ifstream file(path);
+        std::stringstream contents;
+        contents << file.rdbuf();
+        return contents.str();
+    }
+
+    std::string drivetrainDisplayName(const std::string &id) {
+        if (id.empty()) return "Stock";
+
+        std::string name = id;
+        std::replace(name.begin(), name.end(), '_', ' ');
+        name[0] = std::toupper(name[0]);
+        return name;
+    }
+}
+
+// Inspects an engine script (relative to the assets folder) and makes it the
+// current selection. Scripts that ship their own `main` node (the ATG ones)
+// can run stock; bare engine definitions always need a drivetrain preset.
+bool EngineSimApplication::setEngineScript(const std::string &relativePath) {
+    static const std::regex nodeDecl(R"(^(public|private)\s+node\s+(\w+))");
+    static const std::regex engineDecl(R"(^\s*engine\s+\w+\s*\()");
+    static const std::regex mainDecl(R"(\bnode\s+main\b)");
+
+    const std::string source = readTextFile(std::filesystem::path("../assets") / relativePath);
+
+    std::string engineNode, lastNode, line;
+    std::istringstream lines(source);
+    std::smatch match;
+    while (std::getline(lines, line)) {
+        if (std::regex_search(line, match, nodeDecl)) lastNode = match[2];
+        else if (std::regex_search(line, engineDecl)) {
+            engineNode = lastNode;
+            break;
+        }
+    }
+
+    const bool hasMain = std::regex_search(source, mainDecl);
+    if (!hasMain && engineNode.empty()) return false;
+
+    m_engineScript = relativePath;
+    m_engineNode = engineNode;
+    m_engineHasMain = hasMain;
+    return true;
+}
+
+// Recovers the current selection from main.mr, which may have been written
+// by an earlier run or edited by hand.
+bool EngineSimApplication::readEngineSelection() {
+    static const std::regex engineImport(R"(^import\s+"(engines/[^"]+)\")");
+    static const std::regex drivetrainTag(R"(^//\s*drivetrain:\s*(\w+))");
+
+    std::string engineScript, drivetrain, line;
+    std::istringstream lines(readTextFile("../assets/main.mr"));
+    std::smatch match;
+    while (std::getline(lines, line)) {
+        if (std::regex_search(line, match, engineImport)) engineScript = match[1];
+        else if (std::regex_search(line, match, drivetrainTag)) drivetrain = match[1];
+    }
+
+    if (engineScript.empty() || !setEngineScript(engineScript)) return false;
+
+    m_drivetrain = drivetrain;
+    if (!m_engineHasMain && m_drivetrain.empty()) m_drivetrain = "compact";
+    return true;
+}
+
+// Writes ../assets/main.mr for the current engine and drivetrain selection.
+void EngineSimApplication::writeMainScript() {
+    std::ofstream mainScript("../assets/main.mr", std::ios::trunc);
+    mainScript
+        << "import \"engine_sim.mr\"\n"
+        << "import \"themes/default.mr\"\n"
+        << "import \"" << m_engineScript << "\"\n";
+
+    if (m_drivetrain.empty()) {
+        mainScript
+            << "\n"
+            << "use_default_theme()\n"
+            << "main()\n";
+        return;
+    }
+
+    mainScript
+        << "import \"drivetrains.mr\"\n\n"
+        << "// drivetrain: " << m_drivetrain << "\n"
+        << "public node selected_setup {\n"
+        << "    set_engine(" << m_engineNode << "())\n"
+        << "    set_vehicle(drivetrain_" << m_drivetrain << "_vehicle())\n"
+        << "    set_transmission(drivetrain_" << m_drivetrain << "_transmission())\n"
+        << "}\n\n"
+        << "use_default_theme()\n"
+        << "selected_setup()\n";
+}
+
+void EngineSimApplication::selectEngine() {
+    namespace fs = std::filesystem;
+
+    std::error_code ec;
+    const fs::path assetsDir = fs::canonical("../assets", ec);
+    if (ec) return;
+
+    // The simulation is frozen while the dialog is open, so silence the audio
+    // rather than let it loop the last buffer
+    m_audioSource->SetMode(ysAudioSource::Mode::Stop);
+
+    std::string picked;
+    const bool chosen = pickEngineFile((assetsDir / "engines").string(), &picked);
+
+    if (m_simulator->getEngine() != nullptr) {
+        m_audioSource->SetMode(ysAudioSource::Mode::Loop);
+    }
+
+    if (!chosen) return;
+
+    const fs::path relativePath = fs::relative(fs::canonical(picked, ec), assetsDir, ec);
+    if (ec || relativePath.empty() || *relativePath.begin() == "..") {
+        m_infoCluster->setLogMessage("Engine must be inside the assets folder");
+        return;
+    }
+
+    if (!setEngineScript(relativePath.generic_string())) {
+        m_infoCluster->setLogMessage("No engine found in " + relativePath.filename().string());
+        return;
+    }
+
+    // A new engine starts on its own stock setup when it has one
+    m_drivetrain = m_engineHasMain ? "" : "compact";
+
+    writeMainScript();
+    reloadScript();
+}
+
+// Steps through stock (if the engine has one) and the presets in
+// ../assets/drivetrains.mr, then reloads.
+void EngineSimApplication::cycleDrivetrain() {
+    if (m_engineScript.empty() && !readEngineSelection()) {
+        m_infoCluster->setLogMessage("Choose an engine with O first");
+        return;
+    }
+
+    if (m_engineNode.empty()) {
+        m_infoCluster->setLogMessage("This engine only has its stock drivetrain");
+        return;
+    }
+
+    static const std::regex presetDecl(R"(public\s+node\s+drivetrain_(\w+)_vehicle\b)");
+
+    std::vector<std::string> options;
+    if (m_engineHasMain) options.push_back("");
+
+    const std::string presets = readTextFile("../assets/drivetrains.mr");
+    for (std::sregex_iterator it(presets.begin(), presets.end(), presetDecl), end; it != end; ++it) {
+        options.push_back((*it)[1]);
+    }
+
+    if (options.empty()) return;
+
+    auto current = std::find(options.begin(), options.end(), m_drivetrain);
+    m_drivetrain = (current == options.end() || current + 1 == options.end())
+        ? options.front()
+        : *(current + 1);
+
+    writeMainScript();
+    reloadScript();
+
+    m_infoCluster->setLogMessage("Drivetrain: " + drivetrainDisplayName(m_drivetrain));
 }
 
 void EngineSimApplication::processEngineInput() {
@@ -923,6 +1138,14 @@ void EngineSimApplication::processEngineInput() {
     const double clutch_s = dt / (dt + clutchRC);
     m_clutchPressure = m_clutchPressure * (1 - clutch_s) + m_targetClutchPressure * clutch_s;
     m_simulator->getTransmission()->setClutchPressure(m_clutchPressure);
+
+    // Hold J to brake; the pedal ramps in and out over a few tenths of a second
+    Vehicle *vehicle = m_simulator->getVehicle();
+    if (vehicle != nullptr) {
+        const double targetBrake = m_engine.IsKeyDown(ysKey::Code::J) ? 1.0 : 0.0;
+        const double brake_s = dt / (dt + 0.1);
+        vehicle->setBrake(vehicle->getBrake() * (1 - brake_s) + targetBrake * brake_s);
+    }
 }
 
 void EngineSimApplication::renderScene() {

@@ -326,9 +326,16 @@ double RightGaugeCluster::getManifoldPressure() const {
 void RightGaugeCluster::setUnits() {
     constexpr float shortenAngle = (float)units::angle(1.0, units::deg);
 
-    m_speedometer->m_unit = (m_speedUnits == "mph")
-        ? "mph"
-        : "kph";
+    if (m_speedUnits == "mph") {
+        m_speedometer->m_unit = "mph";
+    }
+    else {
+        m_speedometer->m_unit = "km/h";
+        m_speedometer->m_gauge->m_max = 320;
+        m_speedometer->m_gauge->m_minorStep = 10;
+        m_speedometer->m_gauge->m_majorStep = 20;
+        m_speedometer->m_gauge->m_maxMinorTick = 320;
+    }
 
     if (m_pressureUnits == "kPa") {
         m_isAbsolute = true;

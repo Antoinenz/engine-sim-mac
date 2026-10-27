@@ -17,7 +17,7 @@ LoadSimulationCluster::LoadSimulationCluster() {
     m_peakTorque = 0.0;
     m_peakHorsepowerRpm = 0.0;
     m_peakTorqueRpm = 0.0;
-    memset(m_systemStatusLights, 0, sizeof(double) * 4);
+    memset(m_systemStatusLights, 0, sizeof(m_systemStatusLights));
 }
 
 LoadSimulationCluster::~LoadSimulationCluster() {
@@ -115,17 +115,19 @@ void LoadSimulationCluster::destroy() {
 void LoadSimulationCluster::update(float dt) {
     UiElement::update(dt);
 
+    const Vehicle *vehicle = m_simulator->getVehicle();
     const float systemStatuses[] = {
         isIgnitionOn() ? 1.0f : 0.01f,
         m_simulator->m_starterMotor.m_enabled ? 1.0f : 0.01f,
         m_simulator->m_dyno.m_enabled ? 1.0f : 0.01f,
-        m_simulator->m_dyno.m_hold ? (m_simulator->m_dyno.m_enabled ? 1.0f : 0.25f) : 0.01f
+        m_simulator->m_dyno.m_hold ? (m_simulator->m_dyno.m_enabled ? 1.0f : 0.25f) : 0.01f,
+        (vehicle != nullptr) ? std::fmax((float)vehicle->getBrake(), 0.01f) : 0.01f
     };
 
     constexpr float RC = 0.08f;
     const float alpha = dt / (dt + RC);
 
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < SystemStatusCount; ++i) {
         const float next = systemStatuses[i];
         m_systemStatusLights[i] = (1 - alpha) * m_systemStatusLights[i] + alpha * next;
     }
@@ -231,31 +233,36 @@ void LoadSimulationCluster::drawSystemStatus(const Bounds &bounds) {
     drawFrame(bounds, 1.0f, m_app->getForegroundColor(), m_app->getBackgroundColor());
 
     Grid grid;
-    grid.v_cells = 4;
+    grid.v_cells = SystemStatusCount;
     grid.h_cells = 1;
 
     drawText(
         "Ignition",
-        grid.get(left, 0, 0).inset(10.0f),
-        20.0,
+        grid.get(left, 0, 0).inset(8.0f),
+        18.0,
         Bounds::lm);
     drawText(
         "Starter",
-        grid.get(left, 0, 1).inset(10.0f),
-        20.0,
+        grid.get(left, 0, 1).inset(8.0f),
+        18.0,
         Bounds::lm);
     drawText(
         "Dyno.",
-        grid.get(left, 0, 2).inset(10.0f),
-        20.0,
+        grid.get(left, 0, 2).inset(8.0f),
+        18.0,
         Bounds::lm);
     drawText(
         "Hold",
-        grid.get(left, 0, 3).inset(10.0f),
-        20.0,
+        grid.get(left, 0, 3).inset(8.0f),
+        18.0,
+        Bounds::lm);
+    drawText(
+        "Brake",
+        grid.get(left, 0, 4).inset(8.0f),
+        18.0,
         Bounds::lm);
 
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < SystemStatusCount; ++i) {
         const Bounds rawBounds = grid.get(right, 0, i);
         const float width = std::fmax(rawBounds.width(), rawBounds.height());
         const Bounds squareBounds(width - 20.0f, 5.0f, rawBounds.getPosition(Bounds::center), Bounds::center);
